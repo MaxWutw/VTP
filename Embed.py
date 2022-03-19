@@ -12,7 +12,7 @@ class Embedder(nn.Module):
         return self.embed(x)
 
 class PositionalEncoder(nn.Module):
-    def __init__(self, d_model, max_seq_len = 75, dropout = 0.1):
+    def __init__(self, d_model, max_seq_len = 200, dropout = 0.1):
         super().__init__()
         self.d_model = d_model
         self.dropout = nn.Dropout(dropout)
@@ -34,10 +34,9 @@ class PositionalEncoder(nn.Module):
         x = x * math.sqrt(self.d_model)
         #add constant to embedding
         seq_len = x.size(1)
-        print(seq_len)
         pe = Variable(self.pe[:,:seq_len], requires_grad=False)
-        print('pe: ', pe.shape)
-        print('x: ', x.shape)
+        # print('pe: ', pe.shape)
+        # print('x: ', x.shape)
         if x.is_cuda:
             pe.cuda()
         x = x + pe

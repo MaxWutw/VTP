@@ -33,7 +33,6 @@ class Decoder(nn.Module):
         self.norm = Norm(d_model)
     def forward(self, trg, e_outputs, src_mask, trg_mask):
         x = self.embed(trg)
-        print(x)
         x = self.pe(x)
         for i in range(self.N):
             x = self.layers[i](x, e_outputs, src_mask, trg_mask)
@@ -45,9 +44,11 @@ class Transformer(nn.Module):
         self.encoder = Encoder(d_model, N, heads, dropout)
         self.decoder = Decoder(trg_vocab, d_model, N, heads, dropout)
         self.out = nn.Linear(d_model, trg_vocab)
+        self.softmax = nn.Softmax()
     def forward(self, src, trg, src_mask=None, trg_mask=None):
         e_outputs = self.encoder(src, src_mask)
-        print("DECODER")
+        # print("DECODER")
         d_output = self.decoder(trg, e_outputs, src_mask, trg_mask)
         output = self.out(d_output)
+        # output = self.softmax(output)
         return output

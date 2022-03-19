@@ -6,6 +6,8 @@ from torch.autograd import Variable
 from Transformer_Encoder import TransformerEncoder
 import copy
 from transformer import Transformer
+from beam_search import beam_search_decoder
+import torch.nn.functional as F
 
 class ConvFrontend(nn.Module):
     """
@@ -72,38 +74,44 @@ class ConvFrontend(nn.Module):
 class VTPBlock(nn.Module):
     def __init__(self):
         super(VTPBlock, self).__init__()
-        self.transformer_encoder = TransformerEncoder(512, 512, 1, 4, 0.1)
-
+        self.transformer_encoder = TransformerEncoder(trg_vocab=512, d_model=512, N=1, heads=4, dropout=0.1)
+        self.query = nn.Linear(512, 512)
     def forward(self, x):
-        x = self.transformer_encoder(x)
-        return x
+        z = self.transformer_encoder(x)
+        q = self.query(z)
+        q = q.transpose(1,2)
+        attn = torch.matmul(z, q)
+        scores = F.softmax(attn, dim=-1)
+        # print('attention score: ', scores.shape)
+        return scores, z
 
 def get_clones(module, N):
-    # print('hello')
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 class VTP(nn.Module):
-    def __init__(self, with_vtp=False):
+    def __init__(self, with_vtp=True):
         super(VTP, self).__init__()
         # Frontend CNN
         self.with_vtp = with_vtp
         self.frontend = ConvFrontend()
         if self.with_vtp:
             self.vtpblock = get_clones(VTPBlock(), 4)
-        self.transformer = Transformer(2000, 512, 2, 4, 0.1)
+        self.transformer = Transformer(trg_vocab=512, d_model=512, N=2, heads=4, dropout=0.1)
         self.fc1 = nn.Linear(5529600, 512)
         
     def forward(self, x, txt):
         x = self.frontend(x)
-        x = x.view(1, -1)
-        x = self.fc1(x)
-        # if self.with_vtp:
-        #     for i in range(4):
-        #         x = self.vtpblock[i](x)
-        print(x.shape) # torch.Size([1, 200, 512])
-        print(txt[0])
-        x = self.transformer(x, txt[0])
-        print(x.shape)
-        # print('hello')
+        # x = x.view(1, -1)
+        # x = self.fc1(x)
+        x = x.view(-1, 75, 512)
+        if self.with_vtp:
+            for i in range(4):
+                scores, x = self.vtpblock[i](x)
+        x = self.transformer(x, txt[0].view(1, -1))
+        print(x[0].detach().numpy().tolist())
+        x = beam_search_decoder(x[0].detach().numpy().tolist(), 3)
+        print(x)
+        print('transformer output: ', x.shape)
+        print('hello')
 
         return x

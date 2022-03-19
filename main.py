@@ -126,12 +126,12 @@ def train(model, net):
             encoded_data = [encoder.encode(example) for example in txt_origin]
             optimizer.zero_grad()
             y = net(vid, encoded_data)
-            input()
             # y = net(vid)
             # print('shape:', y.shape)
             # print(txt.shape)
             train_loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1))
             train_loss.backward()
+            input()
             if(opt.is_optimize):
                 optimizer.step()
 
