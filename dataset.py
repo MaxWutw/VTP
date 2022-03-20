@@ -13,7 +13,9 @@ import copy
 import json
 import random
 import editdistance
-
+import torchtext
+# from torchnlp.encoders.text import StaticTokenizerEncoder, stack_and_pad_tensors, pad_tensor
+from transformers import AutoTokenizer
 
 class MyDataset(Dataset):
     letters = [' ', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
@@ -35,7 +37,7 @@ class MyDataset(Dataset):
     def __getitem__(self, idx):
         (vid, spk, name) = self.data[idx]
         vid = self._load_vid(vid)
-        anno, origin = self._load_anno(os.path.join(self.anno_path, 'align', name + '.align'))
+        anno = self._load_anno(os.path.join(self.anno_path, 'align', name + '.align'))
         if(self.phase == 'train'):
             vid = HorizontalFlip(vid)
 
@@ -48,8 +50,7 @@ class MyDataset(Dataset):
         return {'vid': torch.FloatTensor(vid.transpose(3, 0, 1, 2)),
             'txt': torch.LongTensor(anno),
             'txt_len': anno_len,
-            'vid_len': vid_len,
-            'txt_origin': origin}
+            'vid_len': vid_len}
 
     def __len__(self):
         return len(self.data)
@@ -66,15 +67,16 @@ class MyDataset(Dataset):
 
     def _load_anno(self, name):
         with open(name, 'r') as f:
+            tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', bos_token='[BOS]', eos_token='[EOS]')
+            tokenizer.add_special_tokens({'bos_token': '[BOS]', 'eos_token': '[EOS]'})
             lines = [line.strip().split(' ') for line in f.readlines()]
             txt = [line[2] for line in lines]
+            # txt = list(filter(lambda s: not s.upper() in ['SIL', 'SP'], txt))
+            txt[0] = '[BOS]'
+            txt[len(txt) - 1] = '[EOS]'
             txt = list(filter(lambda s: not s.upper() in ['SIL', 'SP'], txt))
-            origin = ''
-            for idx, i in enumerate(txt):
-                origin += i
-                if idx != len(txt) - 1:
-                    origin += ' '
-        return MyDataset.txt2arr(' '.join(txt).upper(), 1), origin
+            txt = tokenizer.convert_tokens_to_ids(txt)
+        return np.array(txt)
 
     def _padding(self, array, length):
         array = [array[_] for _ in range(array.shape[0])]
@@ -82,34 +84,6 @@ class MyDataset(Dataset):
         for i in range(length - len(array)):
             array.append(np.zeros(size))
         return np.stack(array, axis=0)
-
-    @staticmethod
-    def txt2arr(txt, start):
-        arr = []
-        for c in list(txt):
-            arr.append(MyDataset.letters.index(c) + start)
-        return np.array(arr)
-
-    @staticmethod
-    def arr2txt(arr, start):
-        txt = []
-        for n in arr:
-            if(n >= start):
-                txt.append(MyDataset.letters[n - start])
-        return ''.join(txt).strip()
-
-    @staticmethod
-    def ctc_arr2txt(arr, start):
-        pre = -1
-        txt = []
-        for n in arr:
-            if(pre != n and n >= start):
-                if(len(txt) > 0 and txt[-1] == ' ' and MyDataset.letters[n - start] == ' '):
-                    pass
-                else:
-                    txt.append(MyDataset.letters[n - start])
-            pre = n
-        return ''.join(txt).strip()
 
     @staticmethod
     def wer(predict, truth):

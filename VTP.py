@@ -6,7 +6,6 @@ from torch.autograd import Variable
 from Transformer_Encoder import TransformerEncoder
 import copy
 from transformer import Transformer
-from beam_search import beam_search_decoder
 import torch.nn.functional as F
 
 class ConvFrontend(nn.Module):
@@ -96,22 +95,17 @@ class VTP(nn.Module):
         self.frontend = ConvFrontend()
         if self.with_vtp:
             self.vtpblock = get_clones(VTPBlock(), 4)
-        self.transformer = Transformer(trg_vocab=512, d_model=512, N=2, heads=4, dropout=0.1)
-        self.fc1 = nn.Linear(5529600, 512)
+        self.transformer = Transformer(trg_vocab=30524, d_model=512, N=2, heads=4, dropout=0.1)
+        self.fc1 = nn.Linear(512, 28)
         
     def forward(self, x, txt):
         x = self.frontend(x)
-        # x = x.view(1, -1)
-        # x = self.fc1(x)
         x = x.view(-1, 75, 512)
         if self.with_vtp:
             for i in range(4):
                 scores, x = self.vtpblock[i](x)
-        x = self.transformer(x, txt[0].view(1, -1))
-        print(x[0].detach().numpy().tolist())
-        x = beam_search_decoder(x[0].detach().numpy().tolist(), 3)
-        print(x)
-        print('transformer output: ', x.shape)
-        print('hello')
-
-        return x
+        x = self.transformer(x, txt[0])
+        if self.with_vtp:
+            return x.contiguous(), scores
+        else:
+            return x.contiguous()

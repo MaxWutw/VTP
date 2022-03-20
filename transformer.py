@@ -44,7 +44,7 @@ class Transformer(nn.Module):
         self.encoder = Encoder(d_model, N, heads, dropout)
         self.decoder = Decoder(trg_vocab, d_model, N, heads, dropout)
         self.out = nn.Linear(d_model, trg_vocab)
-        self.softmax = nn.Softmax()
+        # self.softmax = nn.Softmax()
     def forward(self, src, trg, src_mask=None, trg_mask=None):
         e_outputs = self.encoder(src, src_mask)
         # print("DECODER")

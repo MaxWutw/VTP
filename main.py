@@ -17,11 +17,17 @@ from VTP import VTP
 from torchnlp.encoders.text import StaticTokenizerEncoder, stack_and_pad_tensors, pad_tensor
 import argparse
 
-
 if(__name__ == '__main__'):
     opt = __import__('options')
     os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpu
     writer = SummaryWriter()
+    train_on_gpu = torch.cuda.is_available()
+    if not train_on_gpu:
+        print('CUDA is not available.')
+    else:
+        print('CUDA is available!')
+    # device = "cuda" if train_on_gpu else "cpu"
+    device = "cpu"
 
 def dataset2dataloader(dataset, num_workers=opt.num_workers, shuffle=True):
     return DataLoader(dataset,
@@ -60,12 +66,18 @@ def test(model, net):
         crit = nn.CTCLoss()
         tic = time.time()
         for (i_iter, input) in enumerate(loader):
-            vid = input.get('vid').cuda()
-            txt = input.get('txt').cuda()
+            vid = input.get('vid').to(device)
+            txt = input.get('txt').to(device)
             # print(txt.shape) # torch.Size([4, 96, 75, 4, 8])
-            vid_len = input.get('vid_len').cuda()
-            txt_len = input.get('txt_len').cuda()
-            y = net(vid)
+            vid_len = input.get('vid_len').to(device)
+            txt_len = input.get('txt_len').to(device)
+            txt_origin = input.get('txt_origin')
+            encoder = StaticTokenizerEncoder(txt_origin, tokenize=lambda s: s.split())
+            encoded_data = [encoder.encode(example) for example in txt_origin]
+            if opt.with_vtp:
+                attn, y = net(vid, encoded_data)
+            else:
+                y = net(vid, encoded_data)
             # y = net(vid)
             # print(y.shape)
 
@@ -117,21 +129,20 @@ def train(model, net):
     for epoch in range(opt.max_epoch):
         for (i_iter, input) in enumerate(loader):
             model.train()
-            vid = input.get('vid').cpu()
-            txt = input.get('txt').cpu()
-            vid_len = input.get('vid_len').cpu()
-            txt_len = input.get('txt_len').cpu()
-            txt_origin = input.get('txt_origin')
-            encoder = StaticTokenizerEncoder(txt_origin, tokenize=lambda s: s.split())
-            encoded_data = [encoder.encode(example) for example in txt_origin]
+            vid = input.get('vid').to(device)
+            txt = input.get('txt').to(device)
+            vid_len = input.get('vid_len').to(device)
+            txt_len = input.get('txt_len').to(device)
             optimizer.zero_grad()
-            y = net(vid, encoded_data)
-            # y = net(vid)
-            # print('shape:', y.shape)
+            if opt.with_vtp:
+                y, attn = net(vid, txt)
+            else:
+                y = net(vid, txt)
+            # print(y.shape)
             # print(txt.shape)
+            # loss = ctc_loss(log_probs, targets, input_lengths, target_lengths)
             train_loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1))
             train_loss.backward()
-            input()
             if(opt.is_optimize):
                 optimizer.step()
 
@@ -174,8 +185,8 @@ def train(model, net):
 
 if(__name__ == '__main__'):
     print("Loading options...")
-    model = VTP()
-    net = model.cpu()
+    model = VTP(opt.with_vtp)
+    net = model.to(device)
     torch.manual_seed(opt.random_seed)
     # torch.cuda.manual_seed_all(opt.random_seed)
     train(model, net)
