@@ -16,12 +16,20 @@ from tensorboardX import SummaryWriter
 from VTP import VTP
 from torchnlp.encoders.text import StaticTokenizerEncoder, stack_and_pad_tensors, pad_tensor
 import argparse
-
+# from beam_search import Beam_search
+from transformers import AutoTokenizer
 
 if(__name__ == '__main__'):
     opt = __import__('options')
     os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpu    
     writer = SummaryWriter()
+    train_on_gpu = torch.cuda.is_available()
+    if not train_on_gpu:
+        print('CUDA is not available.')
+    else:
+        print('CUDA is available!')
+    # device = "cuda" if train_on_gpu else "cpu"
+    device = "cpu"
 
 def dataset2dataloader(dataset, num_workers=opt.num_workers, shuffle=True):
     return DataLoader(dataset,
@@ -36,8 +44,14 @@ def show_lr(optimizer):
         lr += [param_group['lr']]
     return np.array(lr).mean()  
 
-def test(model, net):
+def greedy_decoder(data):
+    data = data.detach().cpu().numpy()
+    # index for largest probability each row
+    return [np.argmax(s) for s in data[0]]
 
+def test(model, net):
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', bos_token='[BOS]', eos_token='[EOS]')
+    tokenizer.add_special_tokens({'bos_token': '[BOS]', 'eos_token': '[EOS]'})
     with torch.no_grad():
         dataset = MyDataset(opt.video_path,
             opt.anno_path,
@@ -55,10 +69,11 @@ def test(model, net):
         crit = nn.CTCLoss()
         tic = time.time()
         for (i_iter, input) in enumerate(loader):            
-            vid = input.get('vid').cuda()
-            txt = input.get('txt').cuda()
-            vid_len = input.get('vid_len').cuda()
-            txt_len = input.get('txt_len').cuda()
+            vid = input.get('vid').to(device)
+            txt = input.get('txt').to(device)
+            truth_txt = input.get('origin_txt')
+            vid_len = input.get('vid_len').to(device)
+            txt_len = input.get('txt_len').to(device)
             
             if opt.with_vtp:
                 y, attn = net(vid, txt)
@@ -68,6 +83,11 @@ def test(model, net):
             loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1)).detach().cpu().numpy()
             loss_list.append(loss)
             
+            pred = greedy_decoder(y)
+            pred_txt = tokenizer.decode(pred)
+            wer.extend(MyDataset.wer(pred_txt, truth_txt))
+            cer.extend(MyDataset.cer(pred_txt, truth_txt))
+
             # wer.extend(MyDataset.wer(pred_txt, truth_txt)) 
             # cer.extend(MyDataset.cer(pred_txt, truth_txt))              
             if(i_iter % opt.display == 0):
@@ -103,32 +123,38 @@ def train(model, net):
     print('num_train_data:{}'.format(len(dataset.data)))    
     crit = nn.CTCLoss()
     tic = time.time()
+
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', bos_token='[BOS]', eos_token='[EOS]')
+    tokenizer.add_special_tokens({'bos_token': '[BOS]', 'eos_token': '[EOS]'})
     
     train_wer = []
     train_cer = []
     for epoch in range(opt.max_epoch):
         for (i_iter, input) in enumerate(loader):
             model.train()
-            vid = input.get('vid').cuda()
-            txt = input.get('txt').cuda()
-            vid_len = input.get('vid_len').cuda()
-            txt_len = input.get('txt_len').cuda()
+            vid = input.get('vid').to(device)
+            txt = input.get('txt').to(device)
+            truth_txt = input.get('origin_txt')
+            vid_len = input.get('vid_len').to(device)
+            txt_len = input.get('txt_len').to(device)
             
             optimizer.zero_grad()
             if opt.with_vtp:
                 y, attn = net(vid, txt)
             else:
                 y = net(vid, txt)
-
+            print(y.shape)
+            print(txt.shape)
             loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1))
             loss.backward()
             if(opt.is_optimize):
                 optimizer.step()
             
             tot_iter = i_iter + epoch*len(loader)
-            
-            # train_wer.extend(MyDataset.wer(pred_txt, truth_txt))
-            # train_cer.extend(MyDataset.cer(pred_txt, truth_txt))
+            pred = greedy_decoder(y)
+            pred_txt = tokenizer.decode(pred)
+            train_wer.extend(MyDataset.wer(pred_txt, truth_txt))
+            train_cer.extend(MyDataset.cer(pred_txt, truth_txt))
             
             if(tot_iter % opt.display == 0):
                 v = 1.0*(time.time()-tic)/(tot_iter+1)
@@ -160,9 +186,9 @@ def train(model, net):
 if(__name__ == '__main__'):
     print("Loading options...")
     model = VTP()
-    model = model.cuda()
-    net = nn.DataParallel(model).cuda()
+    model = model.to(device)
+    # net = nn.DataParallel(model).to(device)
         
     torch.manual_seed(opt.random_seed)
-    torch.cuda.manual_seed_all(opt.random_seed)
-    train(model, net)
+    # torch.cuda.manual_seed_all(opt.random_seed)
+    train(model, model)

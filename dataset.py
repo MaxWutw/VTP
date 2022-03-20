@@ -14,7 +14,6 @@ import json
 import random
 import editdistance
 import torchtext
-# from torchnlp.encoders.text import StaticTokenizerEncoder, stack_and_pad_tensors, pad_tensor
 from transformers import AutoTokenizer
 
 class MyDataset(Dataset):
@@ -37,7 +36,7 @@ class MyDataset(Dataset):
     def __getitem__(self, idx):
         (vid, spk, name) = self.data[idx]
         vid = self._load_vid(vid)
-        anno = self._load_anno(os.path.join(self.anno_path, 'align', name + '.align'))
+        anno, origin = self._load_anno(os.path.join(self.anno_path, 'align', name + '.align'))
         if(self.phase == 'train'):
             vid = HorizontalFlip(vid)
 
@@ -50,7 +49,8 @@ class MyDataset(Dataset):
         return {'vid': torch.FloatTensor(vid.transpose(3, 0, 1, 2)),
             'txt': torch.LongTensor(anno),
             'txt_len': anno_len,
-            'vid_len': vid_len}
+            'vid_len': vid_len,
+            'origin_txt': origin}
 
     def __len__(self):
         return len(self.data)
@@ -71,12 +71,19 @@ class MyDataset(Dataset):
             tokenizer.add_special_tokens({'bos_token': '[BOS]', 'eos_token': '[EOS]'})
             lines = [line.strip().split(' ') for line in f.readlines()]
             txt = [line[2] for line in lines]
-            # txt = list(filter(lambda s: not s.upper() in ['SIL', 'SP'], txt))
+            origin = txt
             txt[0] = '[BOS]'
             txt[len(txt) - 1] = '[EOS]'
             txt = list(filter(lambda s: not s.upper() in ['SIL', 'SP'], txt))
             txt = tokenizer.convert_tokens_to_ids(txt)
-        return np.array(txt)
+            origin_txt = ''
+            for idx, i in enumerate(origin):
+                if i == '[BOS]' or i == '[EOS]':
+                    continue
+                origin_txt += i
+                if idx != len(origin) - 1:
+                    origin_txt += ' '
+        return np.array(txt), origin_txt
 
     def _padding(self, array, length):
         array = [array[_] for _ in range(array.shape[0])]
