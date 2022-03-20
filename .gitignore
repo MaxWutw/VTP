@@ -1,5 +1,5 @@
 runs/
 VTP_package.py
 Transformer_package
-__pycache__
+__pycache__/
 main.py
