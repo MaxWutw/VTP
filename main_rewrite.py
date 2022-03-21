@@ -49,6 +49,24 @@ def greedy_decoder(data):
     # index for largest probability each row
     return [np.argmax(s) for s in data[0]]
 
+# def beam_search_decoder(data, k):
+#     sequences = [[list(), 1.0]]
+#     # walk over each step in sequence
+#     for row in data:
+#         all_candidates = list()
+#         # expand each current candidate
+#         for i in range(len(sequences)):
+#             seq, score = sequences[i]
+#             for j in range(len(row)):
+#                 candidate = [seq + [j], score * - np.log(row[j])]
+#                 all_candidates.append(candidate)
+#         # order all candidates by score
+#         ordered = sorted(all_candidates, key=lambda tup :tup[1])
+#         # select k best
+#         sequences = ordered[:k]
+#     return sequences
+
+
 def test(model, net):
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', bos_token='[BOS]', eos_token='[EOS]')
     tokenizer.add_special_tokens({'bos_token': '[BOS]', 'eos_token': '[EOS]'})
@@ -82,23 +100,20 @@ def test(model, net):
             
             loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1)).detach().cpu().numpy()
             loss_list.append(loss)
-            
             pred = greedy_decoder(y)
             pred_txt = tokenizer.decode(pred)
             wer.extend(MyDataset.wer(pred_txt, truth_txt))
             cer.extend(MyDataset.cer(pred_txt, truth_txt))
-
-            # wer.extend(MyDataset.wer(pred_txt, truth_txt)) 
-            # cer.extend(MyDataset.cer(pred_txt, truth_txt))              
+            
             if(i_iter % opt.display == 0):
                 v = 1.0*(time.time()-tic)/(i_iter+1)
                 eta = v * (len(loader)-i_iter) / 3600.0
                 
-                # print(''.join(101*'-'))                
-                # print('{:<50}|{:>50}'.format('predict', 'truth'))
-                # print(''.join(101*'-'))                
-                # for (predict, truth) in list(zip(pred_txt, truth_txt))[:10]:
-                #     print('{:<50}|{:>50}'.format(predict, truth))                
+                print(''.join(101*'-'))                
+                print('{:<50}|{:>50}'.format('predict', 'truth'))
+                print(''.join(101*'-'))                
+                for (predict, truth) in list(zip(pred_txt, truth_txt))[:10]:
+                    print('{:<50}|{:>50}'.format(predict, truth))                
                 print(''.join(101 *'-'))
                 print('test_iter={},eta={},wer={},cer={}'.format(i_iter,eta,np.array(wer).mean(),np.array(cer).mean()))                
                 print(''.join(101 *'-'))
@@ -143,15 +158,15 @@ def train(model, net):
                 y, attn = net(vid, txt)
             else:
                 y = net(vid, txt)
-            print(y.shape)
-            print(txt.shape)
             loss = crit(y.transpose(0, 1).log_softmax(-1), txt, vid_len.view(-1), txt_len.view(-1))
             loss.backward()
             if(opt.is_optimize):
                 optimizer.step()
-            
+
+            # print(y.detach().cpu().numpy()[0].shape)
             tot_iter = i_iter + epoch*len(loader)
             pred = greedy_decoder(y)
+
             pred_txt = tokenizer.decode(pred)
             train_wer.extend(MyDataset.wer(pred_txt, truth_txt))
             train_cer.extend(MyDataset.cer(pred_txt, truth_txt))
@@ -163,12 +178,12 @@ def train(model, net):
                 writer.add_scalar('train loss', loss, tot_iter)
                 writer.add_scalar('train wer', np.array(train_wer).mean(), tot_iter)              
                 writer.add_scalar('train wer', np.array(train_cer).mean(), tot_iter)  
-                # print(''.join(101*'-'))                
-                # print('{:<50}|{:>50}'.format('predict', 'truth'))                
-                # print(''.join(101*'-'))
+                print(''.join(101*'-'))                
+                print('{:<50}|{:>50}'.format('predict', 'truth'))                
+                print(''.join(101*'-'))
                 
-                # for (predict, truth) in list(zip(pred_txt, truth_txt))[:3]:
-                #     print('{:<50}|{:>50}'.format(predict, truth))
+                for (predict, truth) in list(zip(pred_txt, truth_txt))[:3]:
+                    print('{:<50}|{:>50}'.format(predict, truth))
                 print(''.join(101*'-'))                
                 print(f'epoch={epoch},tot_iter={tot_iter},eta={eta},loss={loss},train_wer={np.array(train_wer).mean()}')
                 print(''.join(101*'-'))
