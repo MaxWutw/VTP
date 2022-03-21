@@ -194,7 +194,7 @@ def train(model, net):
                 writer.add_scalar('val loss', loss, tot_iter)                    
                 writer.add_scalar('wer', wer, tot_iter)
                 writer.add_scalar('cer', cer, tot_iter)
-                torch.save(model, 'vtp_model.pkl')
+                torch.save(model, 'weights/vtp_model.pkl')
                 if(not opt.is_optimize):
                     exit()
                 
